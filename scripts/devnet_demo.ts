@@ -54,6 +54,23 @@ const link = (sig: string) => `https://explorer.solana.com/tx/${sig}?cluster=dev
 const addrLink = (a: PublicKey) =>
   `https://explorer.solana.com/address/${a.toBase58()}?cluster=devnet`;
 
+/** Devnet RPC reads fail transiently — retry them (sends are NOT retried:
+ *  a re-sent tx could double-execute; the whole script is rerunnable
+ *  instead, each run creating a fresh event). */
+async function retry<T>(f: () => Promise<T>, label: string, tries = 5): Promise<T> {
+  let last: unknown;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await f();
+    } catch (e) {
+      last = e;
+      console.log(`  … retrying ${label} (${i + 1}/${tries})`);
+      await new Promise((r) => setTimeout(r, 2500 * (i + 1)));
+    }
+  }
+  throw last;
+}
+
 interface ProofLine {
   step: string;
   sig?: string;
@@ -131,12 +148,12 @@ async function main() {
   const [A, B, C, D] = outcomes;
 
   const tokenBalance = async (ataAddr: PublicKey): Promise<bigint> => {
-    const ai = await connection.getAccountInfo(ataAddr);
+    const ai = await retry(() => connection.getAccountInfo(ataAddr), "getAccountInfo");
     if (!ai) return 0n;
     return unpackAccount(ataAddr, ai, TOKEN_2022_PROGRAM_ID).amount;
   };
   const supplyOf = async (mint: PublicKey): Promise<bigint> => {
-    const ai = await connection.getAccountInfo(mint);
+    const ai = await retry(() => connection.getAccountInfo(mint), "getAccountInfo(mint)");
     return unpackMint(mint, ai, TOKEN_2022_PROGRAM_ID).supply;
   };
 
@@ -294,7 +311,9 @@ async function main() {
 
   // ── 7. deaths: eliminate, sweep reserves, mass-burn the dead ─────────────
   const eliminate = async (o: Outcome) => {
-    const reserve = (await program.account.outcomeMarket.fetch(o.market)).realReserve;
+    const reserve = (
+      await retry(() => program.account.outcomeMarket.fetch(o.market), "fetch market")
+    ).realReserve;
     const s = await program.methods
       .eliminate()
       .accountsStrict({
@@ -350,7 +369,7 @@ async function main() {
   );
 
   // ── 8. resolve: last one standing wins ────────────────────────────────────
-  const potBefore = await connection.getBalance(prizeVault);
+  const potBefore = await retry(() => connection.getBalance(prizeVault), "getBalance");
   sig = await program.methods
     .resolve()
     .accountsStrict({
@@ -363,7 +382,7 @@ async function main() {
       authority: me,
     })
     .rpc();
-  const ev = await program.account.eventState.fetch(eventPda);
+  const ev = await retry(() => program.account.eventState.fetch(eventPda), "fetch event");
   log(
     `resolve → ALPHA wins. Pot snapshot ${ev.prizePoolSnapshot.toString()} lamports, ` +
       `winner supply snapshot ${ev.winnerSupplySnapshot.toString()}, fee 5% → treasury`,
@@ -420,8 +439,10 @@ async function main() {
   // ── Final state ───────────────────────────────────────────────────────────
   const final = {
     event: eventPda.toBase58(),
-    status: Object.keys((await program.account.eventState.fetch(eventPda)).status)[0],
-    potRemaining: await connection.getBalance(prizeVault),
+    status: Object.keys(
+      (await retry(() => program.account.eventState.fetch(eventPda), "fetch event")).status
+    )[0],
+    potRemaining: await retry(() => connection.getBalance(prizeVault), "getBalance"),
     supplies: {} as Record<string, string>,
   };
   for (const o of outcomes) final.supplies[o.label] = (await supplyOf(o.mintKp.publicKey)).toString();
