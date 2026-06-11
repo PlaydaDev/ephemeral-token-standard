@@ -83,3 +83,14 @@ proven to hold above (clean preflight rejections):
 
 Both rejections are also covered by the bankrun test suites with full clock control
 (34 green tests: lifecycle, adversarial, curve fuzz — see `tests/`).
+
+## Addendum — program upgraded with the FINDINGS F1/F2 fixes
+
+After this demo ran, the two u128 hardening casts from [FINDINGS.md](FINDINGS.md)
+(F1 sell-tax, F2 resolve-fee — no behavior change in the demo's value range)
+were applied and the program was upgraded in place:
+
+- Upgrade signature: [`2KSyYCF6AzQ1wjag2gKhieEphzYEmmHBNvdYxDq9vycbXX5TyiB3ih8XDBksQp1DJGgycibiPi58QHR7osGKRwHN`](https://explorer.solana.com/tx/2KSyYCF6AzQ1wjag2gKhieEphzYEmmHBNvdYxDq9vycbXX5TyiB3ih8XDBksQp1DJGgycibiPi58QHR7osGKRwHN?cluster=devnet)
+- The devnet upgrade authority is the demo deployer wallet. On any mainnet
+  deployment the upgrade authority must be burned or timelocked — see
+  [SECURITY.md](SECURITY.md), *Deployment requirements*.
