@@ -24,8 +24,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Install Solana (Agave)
+        # Download to a file first: a 404 inside $(curl …) would otherwise
+        # collapse to `sh -c ""` and pass silently. v3.0.15 is not published
+        # on the release server; v3.0.14 ships the same platform-tools v1.51.
         run: |
-          sh -c "$(curl -sSfL https://release.anza.xyz/v3.0.15/install)"
+          curl -sSfL https://release.anza.xyz/v3.0.14/install -o /tmp/agave-install.sh
+          sh /tmp/agave-install.sh
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
 
       - name: Cache anchor-cli
