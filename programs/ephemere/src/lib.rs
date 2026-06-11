@@ -1,7 +1,7 @@
 //! ═══════════════════════════════════════════════════════════════════════════
 //!
 //!   ÉPHÉMÈRE PROTOCOL — Ephemeral Token Standard (ETS) v0.1
-//!   Built by Éphémère Labs — https://github.com/PlaydaDev/ephemere
+//!   Built by Éphémère Labs — https://github.com/PlaydaDev/ephemeral-token-standard
 //!   License: MIT
 //!
 //!   "Every token here is born with a death date."

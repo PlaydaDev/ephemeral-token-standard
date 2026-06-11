@@ -1,6 +1,6 @@
 # Éphémère Protocol — Ephemeral Token Standard (ETS) v0.1
 
-![ci](https://github.com/PlaydaDev/ephemere/actions/workflows/ci.yml/badge.svg)
+![ci](https://github.com/PlaydaDev/ephemeral-token-standard/actions/workflows/ci.yml/badge.svg)
 
 **Built by Éphémère Labs · Open source (MIT) · Solana / Anchor / Token-2022**
 
