@@ -1,0 +1,22 @@
+[package]
+name = "ephemere"
+version = "0.1.0"
+description = "Éphémère Protocol — Ephemeral Token Standard (ETS). Mortal outcome tokens for real-world events. Built by Éphémère Labs."
+edition = "2021"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "ephemere"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = "0.30.1"
+anchor-spl = { version = "0.30.1", features = ["token_2022"] }
