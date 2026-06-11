@@ -2,7 +2,10 @@
 anchor_version = "0.30.1"
 
 [programs.devnet]
-ephemere = "EPHMRprotoco111111111111111111111111111111111"
+ephemere = "4UxnYz4N5b5MnvMeGNqYGyvcu3izQYC7m6df9RhYTygo"
+
+[programs.localnet]
+ephemere = "4UxnYz4N5b5MnvMeGNqYGyvcu3izQYC7m6df9RhYTygo"
 
 [registry]
 url = "https://api.apr.dev"

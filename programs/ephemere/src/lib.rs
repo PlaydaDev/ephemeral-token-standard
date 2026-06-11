@@ -69,7 +69,7 @@ use anchor_spl::token_interface::{
     self, Burn, Mint, MintTo, Token2022, TokenAccount,
 };
 
-declare_id!("EPHMRprotoco111111111111111111111111111111111");
+declare_id!("4UxnYz4N5b5MnvMeGNqYGyvcu3izQYC7m6df9RhYTygo");
 
 pub const MAX_ROUNDS: usize = 16;
 pub const BPS_DENOM: u64 = 10_000;
