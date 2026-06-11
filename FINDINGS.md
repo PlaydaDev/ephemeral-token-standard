@@ -14,6 +14,18 @@ Si on décide de corriger, ces trois tests devront basculer pour asserter le
 succès — c'est volontaire : ils servent de garde anti-régression dans les deux
 sens.
 
+> **MISE À JOUR (2026-06-11, validée par le fondateur)** : F1 et F2 sont
+> **corrigés** (casts u128, un commentaire d'invariant chacun — les deux seules
+> modifications de logique de `lib.rs` depuis le handoff, toutes deux sans
+> effet dans la plage de fonctionnement normale). Les tests F1/F2 ont basculé :
+> ils poussent désormais les deux multiplications AU-DELÀ des anciennes
+> falaises u64 et asserent le résultat exact. F3 est traité comme contrainte
+> de calibration : check `check_f3` ajouté à `tools/calibrate.py` (dont le
+> défaut `VTOK0` violait justement la contrainte — corrigé à 1e15 unités
+> brutes, sans effet sur les multiples simulés). O2 (`overflow-checks = true`)
+> est ratifié. Les sections ci-dessous sont conservées telles quelles comme
+> journal d'investigation.
+
 ---
 
 ## Findings curve (Mission 4)
@@ -178,14 +190,14 @@ par `tsx` (chargement ESM des `.ts` sous Node 18). Purement runner de test.
 
 ## Récapitulatif des décisions en attente
 
-| # | Finding | Sévérité | Correctif proposé | Mon avis |
-|---|---------|----------|-------------------|----------|
-| F1 | `sell` tax mult u64×u64 → panic @ ~7,4 M SOL | Faible (contournable, panic propre) | cast u128 (1 ligne) | Corriger — gratuit, défensif |
-| F2 | `resolve` fee mult u64×u64 → panic @ ~18,4 M SOL, **non contournable** | Faible proba, **brick possible** | cast u128 (1 ligne) | **Corriger en priorité** |
-| F3 | arrondi buy → profit-dust si prix unitaire > 1 lamport (contredit #7) | Négligeable (borné ~1 prix unitaire, < frais tx) | contrainte de calibration, PAS un patch curve | Documenter dans calibrate.py ; pas de patch v1 |
-| O2 | `overflow-checks` ajouté en release | — | garder activé | Garder (transforme F1/F2 en panics, pas en vols) |
+| # | Finding | Sévérité | Décision | Statut |
+|---|---------|----------|----------|--------|
+| F1 | `sell` tax mult u64×u64 → panic @ ~7,4 M SOL | Faible (contournable, panic propre) | cast u128 | ✅ **Corrigé** (2026-06-11) |
+| F2 | `resolve` fee mult u64×u64 → panic @ ~18,4 M SOL, **non contournable** | Faible proba, **brick possible** | cast u128 | ✅ **Corrigé** (2026-06-11) |
+| F3 | arrondi buy → profit-dust si prix unitaire > 1 lamport (contredit #7 à la lettre) | Négligeable (borné ~1 prix unitaire, < frais tx) | contrainte de calibration, pas de patch curve en v1 | ✅ `check_f3` dans calibrate.py |
+| O2 | `overflow-checks = true` en release | — | garder activé | ✅ Ratifié |
 
-**Aucune de ces lignes n'a été appliquée à `lib.rs`.** Les correctifs F1/F2 sont
-à 1 ligne chacun et n'altèrent aucun résultat dans la plage de fonctionnement
-normale ; je les applique dès ton feu vert, et je bascule les tests
-correspondants pour asserter le succès au lieu du panic.
+Bilan final : les deux casts u128 sont les **seules** modifications de logique
+apportées à `lib.rs` depuis le handoff (avec la ligne `declare_id!`). Aucune
+décision verrouillée n'a été touchée ; la décision #7 (arrondis contre le
+trader) est précisée par une contrainte de calibration plutôt que modifiée.

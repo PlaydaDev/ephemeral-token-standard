@@ -24,14 +24,11 @@
  *       burned — rounding against the trader by design), near-empty
  *       reserves, multi-million-SOL amounts.
  *
- * ⚠ FINDINGS pinned here (see FINDINGS.md — documented, NOT silently fixed):
- *   F1. sell: `gross_out * tax_bps` is u64×u64. Above gross ≈ u64::MAX /
- *       tax_bps (7.4M SOL at 25% tax) the multiplication overflows and
- *       panics: the tx aborts, funds are SAFE, and a smaller sell works.
- *   F2. resolve: `pot_total * protocol_fee_bps` is u64×u64. Above
- *       pot ≈ u64::MAX / fee_bps (18.4M SOL at the 10% cap) resolve
- *       panics — and resolve cannot be chunked. Implausible scale, but it
- *       is the one instruction that must never brick.
+ * ⚠ FINDINGS status (see FINDINGS.md):
+ *   F1/F2 — FIXED (u128 casts in sell tax & resolve fee). The tests below
+ *       drive both multiplications far beyond the old u64 cliffs
+ *       (gross ≈ 9e15 × 2500 bps; pot ≈ 2e16 × 1000 bps) and assert exact
+ *       modeled results where panics used to be pinned.
  *   F3. The buy floor burns a slice of k (k' = (x+dx)·⌊k/(x+dx)⌋ < k), and
  *       a smaller k RAISES the gross of the eventual unwind: when the unit
  *       price exceeds ~1 lamport (vsol+dx > vtok), a buy→sell-all round
@@ -627,13 +624,13 @@ describe("ephemere — curve robustness (fuzz)", () => {
     // implies the 75% floor stays ≥ 1); max(1) remains defense in depth.
   });
 
-  // ── F1 — sell-tax multiplication cliff (pins CURRENT behavior) ───────────
-  it("FINDINGS F1: a sell with gross > u64::MAX/tax_bps panics (funds safe); smaller sells work", async function () {
+  // ── F1 (fixed) — tax math survives far beyond the old u64 cliff ──────────
+  it("F1 fixed: a sell whose gross × tax_bps exceeds u64 pays the exact modeled tax", async function () {
     this.timeout(120_000);
     const ev = deriveEvent("FUZZ-HT");
     await initEvent(ev, {
       rounds: 1,
-      tax: [2500, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // max tax → lowest cliff
+      tax: [2500, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // max tax → lowest old cliff
       seq: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
       fee: 0,
       vsol: 10n * BigInt(LAMPORTS_PER_SOL),
@@ -644,39 +641,29 @@ describe("ephemere — curve robustness (fuzz)", () => {
     const m = new Model(10n * BigInt(LAMPORTS_PER_SOL), 1_000_000_000_000_000n);
 
     // 9M SOL in. The unit price is now ≈ 8M lamports — F3 territory: the
-    // full-exit gross exceeds the reserve by a few lamports, so a sell-all
-    // is blocked by InsufficientReserve (asserted at the end). A 95% exit
-    // passes the reserve guard and hits the tax multiplication instead.
+    // exact-all exit may exceed the reserve by a few lamports, so the exit
+    // goes 95% first (checked against the reserve guard) then the rest.
     const dx = 9_000_000_000_000_000n;
     const out = m.buy(dx);
     await buyCall(ev, o, whaleTax, dx);
     await checkInvariants(ev, o, m, "post whale buy", { solvency: false });
 
-    // gross(95% of supply) ≈ 8.96e15 > u64::MAX/2500 ≈ 7.38e15:
-    // `gross_out * tax_bps` overflows u64 → clean panic, tx aborts, nothing
-    // moves. Documented in FINDINGS.md — never a silent wrap.
+    // gross(95% of supply) ≈ 8.96e15: the old u64 `gross_out * tax_bps`
+    // overflowed here (cliff ≈ 7.38e15). With the u128 cast this must now
+    // succeed and route the exact 25% tax to the prize vault — both sides
+    // verified by the mirror in checkInvariants.
     const dy95 = (out * 95n) / 100n;
-    expect(m.quoteSellGross(dy95) > 18_446_744_073_709_551_615n / 2500n).to.be.true;
+    expect(m.quoteSellGross(dy95) > 18_446_744_073_709_551_615n / 2500n,
+      "scenario must exceed the OLD overflow cliff").to.be.true;
     expect(m.quoteSellGross(dy95) <= m.reserve).to.be.true; // reserve guard passes
-    await expectFailAny(sellCall(ev, o, whaleTax, dy95), [
-      "overflow",
-      "panicked",
-      "failed to complete",
-      "ProgramFailedToComplete",
-    ]);
-    await checkInvariants(ev, o, m, "post-panic state untouched", { solvency: false });
+    m.sell(dy95, 2500n);
+    await sellCall(ev, o, whaleTax, dy95);
+    await checkInvariants(ev, o, m, "beyond-old-cliff sell", { solvency: false });
 
-    // The trader is NOT stuck: a first sell sized under the cliff…
-    const dy1 = 4_000_000_000n; // gross ≈ 7.04e15 < cliff
-    expect(m.quoteSellGross(dy1) < 18_446_744_073_709_551_615n / 2500n).to.be.true;
-    m.sell(dy1, 2500n);
-    await sellCall(ev, o, whaleTax, dy1);
-    await checkInvariants(ev, o, m, "first chunk", { solvency: false });
-
-    // …then the rest. F3 corner: the exact-all exit may exceed the reserve
+    // Exit the rest. F3 corner: the exact-all exit may exceed the reserve
     // by a few lamports; the model decides, and if blocked the trader backs
     // off by a hair. Either way the vault never underflows.
-    let rest = out - dy1;
+    let rest = out - dy95;
     if (m.quoteSellGross(rest) > m.reserve) {
       await expectFailAny(
         sellCall(ev, o, whaleTax, rest),
@@ -687,6 +674,8 @@ describe("ephemere — curve robustness (fuzz)", () => {
     m.sell(rest, 2500n);
     await sellCall(ev, o, whaleTax, rest);
     await checkInvariants(ev, o, m, "whale exit complete", { solvency: false });
+    expect((await mintSupply(o.mintKp.publicKey)).toString(), "chain supply == mirror")
+      .to.eq(m.supply.toString());
   });
 
   // ── F3 — round-trip profit corner at unit price > 1 lamport ──────────────
@@ -743,8 +732,8 @@ describe("ephemere — curve robustness (fuzz)", () => {
     console.log(`      F3: dx=${dx} profited ${profit} lamports (fee ≈ 5000 lamports)`);
   });
 
-  // ── F2 — resolve-fee multiplication cliff (pins CURRENT behavior) ────────
-  it("FINDINGS F2: resolve panics when pot × fee_bps exceeds u64 — resolve is not chunkable", async function () {
+  // ── F2 (fixed) — resolve survives a pot far beyond the old u64 cliff ─────
+  it("F2 fixed: resolve on a 20M SOL pot takes the exact fee and snapshots correctly", async function () {
     this.timeout(120_000);
     const ev = deriveEvent("FUZZ-HF");
     await initEvent(ev, {
@@ -777,29 +766,37 @@ describe("ephemere — curve robustness (fuzz)", () => {
       })
       .rpc();
 
-    // `pot_total * protocol_fee_bps` overflows u64 → resolve panics. Unlike
-    // a sell, resolve CANNOT be chunked: above this pot the event cannot be
-    // resolved and redemption is unreachable. ~18.4M SOL is far beyond any
-    // realistic event, but resolve is the one instruction that must never
-    // brick — see FINDINGS.md F2 for the one-line u128 fix to decide on.
-    await expectFailAny(
-      program.methods
-        .resolve()
-        .accountsStrict({
-          event: ev.pda,
-          market: winner.market,
-          mint: winner.mintKp.publicKey,
-          reserveVault: winner.reserveVault,
-          prizeVault: ev.prizeVault,
-          treasury,
-          authority: payer.publicKey,
-        })
-        .rpc(),
-      ["overflow", "panicked", "failed to complete", "ProgramFailedToComplete"]
+    // The old u64 `pot_total * protocol_fee_bps` overflowed here (cliff
+    // ≈ 1.84e16) and bricked the unchunkable resolve. With the u128 cast,
+    // resolve must take the exact 10% fee and freeze exact snapshots.
+    const winnerReserve = BigInt(
+      (await program.account.outcomeMarket.fetch(winner.market)).realReserve.toString()
     );
+    const potTotal = (await balance(ev.prizeVault)) - ev.rent0 + winnerReserve;
+    expect(potTotal > 18_446_744_073_709_551_615n / 1000n,
+      "scenario must exceed the OLD overflow cliff").to.be.true;
+    const expectedFee = (potTotal * 1000n) / 10_000n;
+    const treasuryBefore = await balance(treasury);
 
-    // Event still Active, pot intact — nothing was lost, nothing moved
+    await program.methods
+      .resolve()
+      .accountsStrict({
+        event: ev.pda,
+        market: winner.market,
+        mint: winner.mintKp.publicKey,
+        reserveVault: winner.reserveVault,
+        prizeVault: ev.prizeVault,
+        treasury,
+        authority: payer.publicKey,
+      })
+      .rpc();
+
+    expect((await balance(treasury)) - treasuryBefore, "exact fee to treasury").to.eq(expectedFee);
     const evAcc = await program.account.eventState.fetch(ev.pda);
-    expect(Object.keys(evAcc.status)[0]).to.eq("active");
+    expect(Object.keys(evAcc.status)[0]).to.eq("resolved");
+    expect(evAcc.winner.toBase58()).to.eq(winner.market.toBase58());
+    expect(evAcc.prizePoolSnapshot.toString(), "exact pot snapshot").to.eq(
+      (potTotal - expectedFee).toString()
+    );
   });
 });

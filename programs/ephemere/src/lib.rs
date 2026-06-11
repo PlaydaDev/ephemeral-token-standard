@@ -281,7 +281,9 @@ pub mod ephemere {
         require!(gross_out <= m.real_reserve, EphemereError::InsufficientReserve);
 
         let tax_bps = ev.sell_tax_bps[ev.current_round as usize] as u64;
-        let tax = gross_out * tax_bps / BPS_DENOM;
+        // u128: the bps product of a u64 amount can exceed u64 — the result
+        // is ≤ gross_out, so the cast back is lossless (FINDINGS F1).
+        let tax = ((gross_out as u128) * (tax_bps as u128) / BPS_DENOM as u128) as u64;
         let net_out = gross_out - tax;
         require!(net_out >= min_lamports_out, EphemereError::Slippage);
 
@@ -421,7 +423,11 @@ pub mod ephemere {
             .prize_vault
             .lamports()
             .saturating_sub(rent_floor);
-        let fee = pot_total * ev.protocol_fee_bps as u64 / BPS_DENOM;
+        // u128: resolve is the one instruction that must never brick — the
+        // bps product of a u64 pot can exceed u64 (FINDINGS F2); the result
+        // is ≤ pot_total, so the cast back is lossless.
+        let fee =
+            ((pot_total as u128) * (ev.protocol_fee_bps as u128) / BPS_DENOM as u128) as u64;
         if fee > 0 {
             debit(&ctx.accounts.prize_vault, fee)?;
             credit(&ctx.accounts.treasury, fee)?;

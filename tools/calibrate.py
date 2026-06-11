@@ -25,7 +25,13 @@ ROUND_FLOW = [("Groupes", 0.30), ("R32/R16", 0.25), ("Quarts", 0.20),
               ("Demies", 0.15), ("Finale", 0.10)]
 MIN_LATE_X     = 1.3             # contrainte dure (avant-dernier round)
 EARLY_TARGET_X = 3.0             # prime early souhaitée (1er round)
-VTOK0          = 1_000_000_000 * 10**0   # réserve virtuelle tokens (unités)
+# Réserve virtuelle tokens, en UNITÉS BRUTES on-chain (9 décimales).
+# Contrainte FINDINGS F3 : garder le prix par unité brute < 1 lamport au pic
+# de dépôts, sinon l'arrondi de la curve cesse d'être strictement contre le
+# trader (profit-poussière possible, prélevé sur la réserve commune).
+# 1e15 = 1M tokens — sub-lamport jusqu'à ~1M SOL de vsol au pic.
+VTOK0          = 1_000_000_000 * 10**6
+LAMPORTS       = 10**9
 # ─────────────────────────────────────────────────────────────────────────────
 
 def simulate(vsol0: float):
@@ -43,6 +49,24 @@ def simulate(vsol0: float):
     supply = sum(t for _, _, t in cohorts)
     rate = pot / supply
     return [(n, d, (t * rate) / d) for n, d, t in cohorts], pot
+
+def check_f3(vsol0_sol: float) -> bool:
+    """FINDINGS F3 — la granularité d'arrondi vaut ~1 prix unitaire par trade.
+    Tant que le prix par unité brute reste < 1 lamport au pic de dépôts du
+    champion, l'arrondi reste strictement contre le trader. Au-delà, un
+    aller-retour peut extraire quelques lamports de la réserve commune
+    (borné par ~1 prix unitaire, < frais de tx — mais évitable)."""
+    peak_vsol_lamports = (vsol0_sol + TOTAL_DEPOSITS_SOL * CHAMPION_SHARE) * LAMPORTS
+    unit_price = peak_vsol_lamports / VTOK0
+    if unit_price < 1.0:
+        print(f"  [F3 OK] prix unitaire au pic ≈ {unit_price:.3g} lamport/unité brute (< 1)")
+        return True
+    need = 10
+    while peak_vsol_lamports / need >= 1.0:
+        need *= 10
+    print(f"  [F3 KO] prix unitaire au pic ≈ {unit_price:.3g} lamports/unité (≥ 1) :")
+    print(f"          monter initial_virtual_tokens à ≥ {need:.0e} unités brutes")
+    return False
 
 def main():
     print(f"Dépôts {TOTAL_DEPOSITS_SOL} SOL | champion {CHAMPION_SHARE:.0%} | "
@@ -68,6 +92,7 @@ def main():
               f"(contrainte ≥ x{MIN_LATE_X}), pot net ≈ {pot:,.0f} SOL")
         print("  NB: vsol0 s'applique PAR OUTCOME — les outsiders auront le même,")
         print("  ce qui rend leurs curves très plates au départ (cotes longues lisibles).")
+        check_f3(vsol0)
     else:
         print("► Aucune config ne satisfait la contrainte: augmenter le ratio ou la rétention.")
 
