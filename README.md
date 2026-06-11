@@ -1,5 +1,7 @@
 # Éphémère Protocol — Ephemeral Token Standard (ETS) v0.1
 
+![ci](https://github.com/ephemere-labs/ephemere/actions/workflows/ci.yml/badge.svg)
+
 **Built by Éphémère Labs · Open source (MIT) · Solana / Anchor / Token-2022**
 
 > Every token here is born with a death date.
@@ -64,9 +66,26 @@ A reference oracle service (multisig flow + sports-data adapters) and a referenc
 - `sequester_bps[]` — the hourglass speed. Too fast: the markets bleed and the flywheel dies. Too slow: the pot is thin and the endgame run risk grows. Calibrate against expected staking participation so elimination burns (supply ↓) dominate sequestration (reserve ↓) and eliminations are *bullish* for survivors.
 - `sell_tax_bps[]` — the exit-pressure dampener for late rounds.
 
+## Build & test
+
+```bash
+anchor build                 # Anchor 0.30.1, Solana/Agave platform-tools
+npm ci && npm test           # 34 tests: lifecycle, adversarial, curve fuzz (anchor-bankrun)
+cargo clippy -p ephemere --all-targets -- -D warnings
+```
+
+Tests run in-process (anchor-bankrun) with full clock control — no validator
+needed. On Windows, run them under WSL: `bash scripts/wsl-test.sh`
+(solana-bankrun ships no win32 binding).
+
+The full death cycle has been executed on devnet with publicly verifiable
+transactions: see **[DEVNET_PROOF.md](DEVNET_PROOF.md)**.
+
 ## Status & security
 
-⚠️ **v0.1 — reference implementation. Unaudited. Do not deploy to mainnet with real funds without an independent audit and a full devnet lifecycle test (create → trade → freeze → eliminate → sequester → resolve → redeem → burn → sweep).** Known sharp edges to review: lamport accounting on program-owned vaults, Token-2022 extension initialization order, rounding direction on curve math (floor on buys, ceil on sells — always against the trader).
+⚠️ **v0.1 — reference implementation. Unaudited. Do not deploy to mainnet with real funds without an independent audit and a full devnet lifecycle test (create → trade → freeze → eliminate → sequester → resolve → redeem → burn → sweep).** Known sharp edges to review: lamport accounting on program-owned vaults, Token-2022 extension initialization order, rounding direction on curve math (floor on buys, ceil on sells — always against the trader). Behavior found and characterized by the fuzz suite is documented in [FINDINGS.md](FINDINGS.md).
+
+Vulnerability reporting and bounty perimeter: see [SECURITY.md](SECURITY.md).
 
 Operating an instance of this protocol may be regulated activity in your jurisdiction. Éphémère Labs publishes code, not legal cover. Know what you are deploying.
 
